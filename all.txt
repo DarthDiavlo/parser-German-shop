@@ -1,0 +1,86 @@
+const axios = require('axios');
+const cheerio = require('cheerio');
+const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+
+// URL страницы, которую вы хотите спарсить
+const baseUrl = "https://www.conrad.de/de/search.html?search=drahtlose%20Kopfh%C3%B6rer&page=";
+
+// Массив для хранения ссылок
+const urls = [];
+const data = [];
+
+for (let i = 1; i <= 48; i++) {
+    const url = baseUrl + i;
+    urls.push(url);
+}
+
+//  API ключ от PhantomJS Cloud
+const apiKey = 'ak-a3de4-fdth4-8fmm4-81kmk-0ywhe';
+
+const phantomJsCloudUrl = `https://phantomjscloud.com/api/browser/v2/${apiKey}/`;
+
+const csvWriter = createCsvWriter({
+  path: 'products.csv', // Путь к выходному файлу
+  header: [
+    { id: 'name', title: 'Название' },
+    { id: 'price', title: 'Цена' },
+    { id: 'qualityRating', title: 'Оценка качества' },
+    { id: 'deliveryTime', title: 'Время доставки' },
+    { id: 'reviewCount', title: 'Количество отзывов' },
+    { id: 'photo', title: 'Фото' },
+    { id: 'remainingQuantity', title: 'Количество оставшихся штук' },
+    { id: 'shortDescription', title: 'Краткое описание' }
+  ]
+});
+
+for (const item of urls) {
+  // Параметры запроса к PhantomJS Cloud
+  const requestData = {
+    url: item,
+    renderType: 'html',
+    outputAsJson: true
+  };
+  setTimeout(() => {
+  // Загрузка HTML страницы через PhantomJS Cloud
+  axios.post(phantomJsCloudUrl, requestData)
+    .then(response => {
+      const html = response.data.content.data;
+      const $ = cheerio.load(html);
+
+      // Получаем все карточки товаров
+      const productCards = $('.tableLayout__row');
+      console.log('Product cards length:', productCards.length); // Выводим количество найденных карточек товаров
+
+      // Перебираем каждую карточку товара
+      productCards.each((j, card) => {
+        const nameElement = $(card).find('.product__title');
+        const priceElement = $(card).find('.product__currentPrice');
+        const stockElement = $(card).find('.productAvailability__status span:nth-child(2)');
+        const deliveryTimeElement = $(card).find('.productAvailability__estimatedDate');
+        const photoElement = $(card).find('.product__imageLink img');
+
+        const name = nameElement.text().trim() || 'Название не найдено';
+        const price = priceElement.text().trim() || 'Цена не найдена';
+        const stock = stockElement.text().trim() || 'Количество не найдено';
+        const deliveryTime = deliveryTimeElement.text().trim() || 'Сроки доставки не найдены';
+        const photo = photoElement.attr('src') || 'Фото не найдено';
+
+        data.push({
+              name: name,
+              price: price,
+              qualityRating: 'не найдено',
+              deliveryTime: deliveryTime,
+              reviewCount: stock,
+              photo: photo,
+              remainingQuantity: 'не найдено',
+              shortDescription: 'не найдено'
+            });
+      });
+    })
+    .catch(error => {
+      console.error('Ошибка при загрузке страницы:', error);
+    });
+  }, 2000);
+    csvWriter.writeRecords(data)
+            .catch(err => console.error('Error writing CSV file:', err));
+}    
